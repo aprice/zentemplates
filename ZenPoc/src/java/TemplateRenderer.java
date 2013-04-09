@@ -9,6 +9,7 @@ import java.util.regex.Pattern;
 import javax.servlet.ServletContext;
 import javax.servlet.http.HttpServletResponse;
 import org.apache.commons.lang3.StringEscapeUtils;
+import org.apache.commons.lang3.text.StrSubstitutor;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
@@ -127,10 +128,11 @@ public class TemplateRenderer {
 	private void handleSubstitution() {
 		System.out.println("Handling substitution");
 		long start = System.currentTimeMillis();
-		String text = outDoc.html();
-		for (String key : model.keySet()) {
-			text = text.replaceAll("\\$\\{"+key+"\\}", cleanHtml(model.get(key).toString()));
-		}
+		StrSubstitutor ss = new StrSubstitutor(model);
+		String text = ss.replace(outDoc.html());
+		// TODO: cleanHtml(model.get(key).toString()));
+		// Requires implementing a custom StrLookup
+
 		outDoc = Jsoup.parse(text);
 		long end = System.currentTimeMillis();
 		System.out.println("Substitution time: "+(end - start)+" ms.");
