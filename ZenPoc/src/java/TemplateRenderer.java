@@ -3,14 +3,20 @@ import java.io.File;
 import java.io.FileReader;
 import java.io.IOException;
 import java.io.Writer;
+import java.math.BigDecimal;
+import java.math.BigInteger;
+import java.util.ArrayList;
 import java.util.Collection;
+import java.util.List;
 import java.util.Map;
 import javax.servlet.ServletContext;
 import javax.servlet.http.HttpServletResponse;
 import org.apache.commons.io.IOUtils;
 import org.apache.commons.lang3.StringEscapeUtils;
 import org.apache.commons.lang3.text.StrSubstitutor;
+import org.apache.log4j.Logger;
 import org.jsoup.Jsoup;
+import org.jsoup.nodes.Attribute;
 import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
 import org.jsoup.select.Elements;
@@ -20,6 +26,8 @@ import org.jsoup.select.Elements;
  * @author Adrian
  */
 public class TemplateRenderer {
+	private static final Logger LOG = Logger.getLogger(TemplateRenderer.class);
+
 	File templateFile;
 	Document inDoc, outDoc;
 	String result, templateRoot = null, siteRoot = null;
@@ -58,7 +66,7 @@ public class TemplateRenderer {
 	}
 
 	private void handleRendering() throws IOException {
-		System.out.println("Rendering template");
+		LOG.info("Rendering template");
 		loadTemplate();
 		handleDerivation();
 		handleInjection();
@@ -66,7 +74,7 @@ public class TemplateRenderer {
 	}
 
 	private void loadTemplate() throws IOException {
-		System.out.println("Loading template: " + templateFile);
+		LOG.info("Loading template: " + templateFile);
 		inDoc = Jsoup.parse(templateFile, "UTF-8");
 		outDoc = new Document(templateFile.getParent());
 	}
@@ -94,7 +102,7 @@ public class TemplateRenderer {
 		}
 
 		if (derivesFrom != null && !derivesFrom.isEmpty()) {
-			System.out.println("Handling derivation: " + derivesFrom);
+			LOG.info("Handling derivation: " + derivesFrom);
 
 			// Handle nested derivation
 			TemplateRenderer parentRenderer = new TemplateRenderer(derivesFrom);
@@ -128,7 +136,7 @@ public class TemplateRenderer {
 				}
 
 				if (outParent == null) {
-					System.out.println("Notice: no parent found for appendix: "+inAppendix.toString());
+					LOG.warn("Notice: no parent found for appendix: "+inAppendix.toString());
 					continue;
 				}
 
@@ -136,7 +144,7 @@ public class TemplateRenderer {
 
 				Element outSibling = outParent.getElementById(appendixData[1]);
 				if (outSibling == null) {
-					System.out.println("Notice: sibling not found: "+appendixData[1]);
+					LOG.error("Notice: sibling not found: "+appendixData[1]);
 					continue;
 				}
 
@@ -152,9 +160,13 @@ public class TemplateRenderer {
 	}
 
 	private void handleInjection() {
-		System.out.println("Handling injection");
+		handleInjection(outDoc);
+	}
 
-		for (Element e : outDoc.getElementsByAttribute("data-z-snippet")) {
+	private void handleInjection(Element rootElement) {
+		LOG.info("Handling injection for "+rootElement.tagName());
+
+		for (Element e : rootElement.getElementsByAttribute("data-z-snippet")) {
 			String snippetName = e.dataset().get("z-snippet");
 			String[] snippetParts = snippetName.split("#",2);
 			File snippetFile = findTemplateFile(snippetParts[0]);
@@ -163,7 +175,7 @@ public class TemplateRenderer {
 				try {
 					snippetContents = IOUtils.toString(new FileReader(snippetFile));
 				} catch (IOException ex) {
-					System.out.println("Could not read snippet file "+snippetFile.getPath()+": "+ex.getMessage());
+					LOG.error("Could not read snippet file "+snippetFile.getPath()+": "+ex.getMessage());
 					e.remove();
 				}
 
@@ -174,61 +186,119 @@ public class TemplateRenderer {
 					} else if (snippetDoc.getElementById(snippetParts[1]) != null) {
 						e.replaceWith(snippetDoc.getElementById(snippetParts[1]));
 					} else {
-						System.out.println("Could not find snippet fragment by ID: "+snippetName);
+						LOG.error("Could not find snippet fragment by ID: "+snippetName);
 						e.remove();
 					}
 				}
 			} else {
-				System.out.println("Could not locate snippet file: "+snippetName);
+				LOG.error("Could not locate snippet file: "+snippetName);
 				e.remove();
 			}
 		}
 
-		for (String key : propLookup.getPropertyNames()) {
-			Elements outMatches = outDoc.getElementsByClass(key);
-			outMatches.add(outDoc.getElementById(key));
-			for (Element outMatch : outMatches) {
-				if (outMatch == null) continue;
-				if (propLookup.lookupProperty(key) instanceof Collection) {
-					Element lastElement = outMatch;
-					for (Object item : ((Collection)propLookup.lookupProperty(key))) {
-						Element newElement = outMatch.clone();
-						newElement.html(cleanAndParagraph(item.toString()));
-						lastElement.after(newElement);
-						lastElement = newElement;
+		for (Element e : rootElement.getElementsByAttribute("data-z-if")) {
+			String expression = e.dataset().get("z-if").trim();
+			if (!propLookup.lookupBoolean(expression)) {
+				e.remove();
+			}
+		}
+
+		Elements candInject = rootElement.getElementsByAttribute("class");
+		candInject.addAll(rootElement.getElementsByAttribute("id"));
+		candInject.removeAll(rootElement.getElementsByAttribute("data-z-no-inject"));
+		candInject.addAll(rootElement.getElementsByAttribute("data-z-inject"));
+		candInject.remove(rootElement);
+		LOG.trace("Injection candidates: "+candInject.size());
+		for (Element e: candInject) {
+			if (e.hasAttr("data-z-inject")) {
+				inject(e, e.dataset().get("z-inject"));
+			} else {
+				String candKeysRaw = e.className() + " " + e.id();
+				String[] candKeys = candKeysRaw.trim().split(" ");
+				for (String candKey : candKeys) {
+					if (propLookup.hasProperty(candKey)) {
+						inject(e, candKey);
+						break;
 					}
-					outMatch.remove();
-				} else {
-					outMatch.html(cleanAndParagraph(propLookup.lookup(key)));
 				}
 			}
 		}
 
-		for (Element e : outDoc.getElementsByAttribute("data-z-if")) {
-			String expression = e.dataset().get("z-if").trim();
-			// TODO: Inversion
-			// TODO: Comparison operators
-			String target = propLookup.lookup(expression);
-			if (target == null || target.isEmpty()
-					|| target.toString().equals("0")
-					|| target.toString().toLowerCase().equals("false")) {
-				e.remove();
-			}
+		Elements dummies = rootElement.getElementsByClass("z-lorem");
+		for (Element e: dummies) {
+			e.remove();
 		}
 	}
 
+	private void inject(Element element, String key) {
+		LOG.debug("Injecting key: "+key);
+		Object property = propLookup.lookupProperty(key);
+		if (property instanceof Map) property = ((Map)property).values();
+		LOG.trace(key+" is "+(property == null ? "null" : "a "+property.getClass()));
+
+		// Non-map collections and primitive wrappers can be injected directly
+		if (property == null) {
+			element.html("");
+		} else if (property instanceof Collection) {
+			Element lastElement = element;
+			List list = new ArrayList((Collection)property);
+			for (int i = 0; i < list.size(); i++) {
+				Object item = list.get(i);
+				Element newElement = element.clone();
+				lastElement.after(newElement);
+				lastElement = newElement;
+				if (isBasicType(item)) {
+					newElement.html(cleanAndParagraph(item.toString()));
+				} else {
+					propLookup.pushScope(key);
+					propLookup.pushScope(String.valueOf(i));
+					handleInjection(newElement);
+					handleSubstitution(newElement);
+					propLookup.popScope();
+					propLookup.popScope(key);
+				}
+			}
+			element.remove();
+		} else if (isBasicType(property)) {
+			element.html(cleanAndParagraph(property.toString()));
+		} else {
+			propLookup.pushScope(key);
+			handleInjection(element);
+			handleSubstitution(element);
+			propLookup.popScope(key);
+		}
+	}
+
+	private boolean isBasicType(Object o) {
+		return o instanceof String
+				|| o instanceof Byte || o instanceof Short
+				|| o instanceof Integer || o instanceof Long
+				|| o instanceof Float || o instanceof Double
+				|| o instanceof Boolean || o instanceof Character
+				|| o instanceof BigInteger || o instanceof BigDecimal;
+	}
+
 	private void handleSubstitution() {
-		System.out.println("Handling substitution");
+		LOG.info("Handling substitution");
 		StrSubstitutor ss = new StrSubstitutor(propLookup);
 		String text = ss.replace(outDoc.html());
-		// TODO: cleanHtml(model.get(key).toString()));
-		// Requires implementing a custom StrLookup or decorating an existing StrLookup
-
 		outDoc = Jsoup.parse(text);
 	}
 
+	private void handleSubstitution(Element rootElement) {
+		LOG.info("Handling element-level substitution");
+		StrSubstitutor ss = new StrSubstitutor(propLookup);
+		String text = ss.replace(rootElement.outerHtml());
+		Document fragment = Jsoup.parseBodyFragment(text);
+		Element processed = fragment.body().child(0);
+		rootElement.html(processed.html());
+		for (Attribute attr: processed.attributes()) {
+			rootElement.attr(attr.getKey(), attr.getValue());
+		}
+	}
+
 	private void writeOut(HttpServletResponse response) throws IOException {
-		System.out.println("Flushing output");
+		LOG.info("Flushing output");
 		outDoc.outputSettings().indentAmount(4);
 		result = outDoc.ownerDocument().html();
 		response.setContentType("text/html;charset=utf-8");
@@ -236,7 +306,7 @@ public class TemplateRenderer {
 	}
 
 	private void writeOut(Writer out) throws IOException {
-		System.out.println("Flushing output");
+		LOG.info("Flushing output");
 		outDoc.outputSettings().indentAmount(4);
 		result = outDoc.ownerDocument().html();
 		out.write(result);
