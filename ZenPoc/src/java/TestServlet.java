@@ -26,12 +26,12 @@ public class TestServlet extends HttpServlet {
 	protected void processRequest(HttpServletRequest request, HttpServletResponse response)
 			throws ServletException, IOException {
 		TemplateRenderer r = new TemplateRenderer("WEB-INF/sample.html", getServletContext());
-		r.setProperty("name", "world");
+		r.addProperty("name", "world");
 		List<String> injList = new ArrayList<String>(3);
 		injList.add("Testing 1");
 		injList.add("Testing 2");
 		injList.add("Testing 3");
-		r.setProperty("injectionTest", injList);
+		r.addProperty("injectionTest", injList);
 		r.render(response);
 	}
 

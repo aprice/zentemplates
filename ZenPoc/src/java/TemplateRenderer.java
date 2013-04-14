@@ -1,12 +1,13 @@
 
 import java.io.File;
+import java.io.FileReader;
 import java.io.IOException;
 import java.io.Writer;
 import java.util.Collection;
-import java.util.HashMap;
 import java.util.Map;
 import javax.servlet.ServletContext;
 import javax.servlet.http.HttpServletResponse;
+import org.apache.commons.io.IOUtils;
 import org.apache.commons.lang3.StringEscapeUtils;
 import org.apache.commons.lang3.text.StrSubstitutor;
 import org.jsoup.Jsoup;
@@ -21,8 +22,8 @@ import org.jsoup.select.Elements;
 public class TemplateRenderer {
 	File templateFile;
 	Document inDoc, outDoc;
-	Map<String, Object> model = new HashMap<String, Object>();
 	String result, templateRoot = null, siteRoot = null;
+	PropertyLookup propLookup;
 
 	public TemplateRenderer(String templatePath, ServletContext servletContext) {
 		this(servletContext.getRealPath(templatePath));
@@ -35,10 +36,15 @@ public class TemplateRenderer {
 	public TemplateRenderer(File templateFile) {
 		this.templateFile = templateFile;
 		result = "";
+		propLookup = new PropertyLookup();
 	}
 
-	void setProperty(String name, Object value) {
-		model.put(name, value);
+	void addProperty(String name, Object value) {
+		propLookup.addProperty(name, value);
+	}
+
+	void addProperties(Map<String,Object> properties) {
+		propLookup.addProperties(properties);
 	}
 
 	void render(HttpServletResponse response) throws IOException {
@@ -75,7 +81,7 @@ public class TemplateRenderer {
 			if (!derivesFrom.isEmpty()) {
 				String[] candidates = derivesFrom.split("\\s");
 				for (String parent : candidates) {
-					File derivedFile = findDerivedFile(parent + ".html");
+					File derivedFile = findTemplateFile(parent + ".html");
 					if (derivedFile != null) {
 						derivesFrom = derivedFile.getPath();
 						break;
@@ -83,7 +89,7 @@ public class TemplateRenderer {
 				}
 			}
 		} else {
-			File derivedFile = findDerivedFile(derivesFrom);
+			File derivedFile = findTemplateFile(derivesFrom);
 			derivesFrom = (derivedFile == null) ? null : derivedFile.getPath();
 		}
 
@@ -147,12 +153,45 @@ public class TemplateRenderer {
 
 	private void handleInjection() {
 		System.out.println("Handling injection");
-		for (String key : model.keySet()) {
+
+		for (Element e : outDoc.getElementsByAttribute("data-z-snippet")) {
+			String snippetName = e.dataset().get("z-snippet");
+			String[] snippetParts = snippetName.split("#",2);
+			File snippetFile = findTemplateFile(snippetParts[0]);
+			if (snippetFile != null) {
+				String snippetContents = null;
+				try {
+					snippetContents = IOUtils.toString(new FileReader(snippetFile));
+				} catch (IOException ex) {
+					System.out.println("Could not read snippet file "+snippetFile.getPath()+": "+ex.getMessage());
+					e.remove();
+				}
+
+				if (snippetContents != null) {
+					Document snippetDoc = Jsoup.parseBodyFragment(snippetContents);
+					if (snippetParts.length == 1) {
+						e.replaceWith(snippetDoc.body().child(0));
+					} else if (snippetDoc.getElementById(snippetParts[1]) != null) {
+						e.replaceWith(snippetDoc.getElementById(snippetParts[1]));
+					} else {
+						System.out.println("Could not find snippet fragment by ID: "+snippetName);
+						e.remove();
+					}
+				}
+			} else {
+				System.out.println("Could not locate snippet file: "+snippetName);
+				e.remove();
+			}
+		}
+
+		for (String key : propLookup.getPropertyNames()) {
 			Elements outMatches = outDoc.getElementsByClass(key);
+			outMatches.add(outDoc.getElementById(key));
 			for (Element outMatch : outMatches) {
-				if (model.get(key) instanceof Collection) {
+				if (outMatch == null) continue;
+				if (propLookup.lookupProperty(key) instanceof Collection) {
 					Element lastElement = outMatch;
-					for (Object item : ((Collection)model.get(key))) {
+					for (Object item : ((Collection)propLookup.lookupProperty(key))) {
 						Element newElement = outMatch.clone();
 						newElement.html(cleanAndParagraph(item.toString()));
 						lastElement.after(newElement);
@@ -160,15 +199,27 @@ public class TemplateRenderer {
 					}
 					outMatch.remove();
 				} else {
-					outMatch.html(cleanAndParagraph(model.get(key).toString()));
+					outMatch.html(cleanAndParagraph(propLookup.lookup(key)));
 				}
+			}
+		}
+
+		for (Element e : outDoc.getElementsByAttribute("data-z-if")) {
+			String expression = e.dataset().get("z-if").trim();
+			// TODO: Inversion
+			// TODO: Comparison operators
+			String target = propLookup.lookup(expression);
+			if (target == null || target.isEmpty()
+					|| target.toString().equals("0")
+					|| target.toString().toLowerCase().equals("false")) {
+				e.remove();
 			}
 		}
 	}
 
 	private void handleSubstitution() {
 		System.out.println("Handling substitution");
-		StrSubstitutor ss = new StrSubstitutor(model);
+		StrSubstitutor ss = new StrSubstitutor(propLookup);
 		String text = ss.replace(outDoc.html());
 		// TODO: cleanHtml(model.get(key).toString()));
 		// Requires implementing a custom StrLookup or decorating an existing StrLookup
@@ -191,7 +242,7 @@ public class TemplateRenderer {
 		out.write(result);
 	}
 
-	private File findDerivedFile(String name) {
+	private File findTemplateFile(String name) {
 		File f = new File(name);
 		if (f.isAbsolute()) {
 			return f.exists() ? f : null;
