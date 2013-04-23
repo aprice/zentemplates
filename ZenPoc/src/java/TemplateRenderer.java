@@ -196,6 +196,11 @@ public class TemplateRenderer {
 			}
 		}
 
+		Elements dummies = rootElement.getElementsByClass("z-lorem");
+		for (Element e: dummies) {
+			e.remove();
+		}
+
 		for (Element e : rootElement.getElementsByAttribute("data-z-if")) {
 			String expression = e.dataset().get("z-if").trim();
 			if (!propLookup.lookupBoolean(expression)) {
@@ -213,20 +218,23 @@ public class TemplateRenderer {
 			if (e.hasAttr("data-z-inject")) {
 				inject(e, e.dataset().get("z-inject"));
 			} else {
-				String candKeysRaw = e.className() + " " + e.id();
-				String[] candKeys = candKeysRaw.trim().split(" ");
-				for (String candKey : candKeys) {
-					if (propLookup.hasProperty(candKey)) {
-						inject(e, candKey);
-						break;
-					}
+				String firstClass;
+				if (e.className().isEmpty()) {
+					firstClass = null;
+				} else if (e.className().contains(" ")) {
+					firstClass = e.className().substring(e.className().indexOf(" "));
+				} else {
+					firstClass = e.className();
+				}
+
+				if (!e.id().isEmpty() && propLookup.hasProperty(e.id())) {
+					inject(e, e.id());
+					break;
+				} else if (firstClass != null && propLookup.hasProperty(firstClass)) {
+					inject(e, firstClass);
+					break;
 				}
 			}
-		}
-
-		Elements dummies = rootElement.getElementsByClass("z-lorem");
-		for (Element e: dummies) {
-			e.remove();
 		}
 	}
 
@@ -336,8 +344,7 @@ public class TemplateRenderer {
 	}
 
 	private String cleanHtml(String html) {
-		String out = html.trim().replaceAll("[ \\t]+", " ");
-		return StringEscapeUtils.escapeXml(out);
+		return StringEscapeUtils.escapeXml(html);
 	}
 
 	private String newlineToParagraph(String text) {

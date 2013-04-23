@@ -7,12 +7,14 @@ import java.util.Collections;
 import java.util.Map;
 import net.sf.json.JSONObject;
 import org.apache.commons.io.IOUtils;
+import org.apache.log4j.Logger;
 
 /**
  *
  * @author Adrian
  */
 public class StaticRenderer {
+	private static final Logger LOG = Logger.getLogger(StaticRenderer.class);
 	private static final String INPUT_DIR = "E:\\Development\\Zen Rogue\\templates\\";
 	private static final String OUTPUT_DIR = "E:\\Development\\Zen Rogue\\rendered\\";
 
@@ -28,9 +30,9 @@ public class StaticRenderer {
 			try {
 				globalJson = IOUtils.toString(new FileReader(globalJsonFile));
 			} catch (IOException ex) {
-				System.out.println("Unable to read global.json");
+				LOG.warn("Unable to read global.json");
 			}
-			
+
 			if (globalJson != null) {
 				model = JSONObject.fromObject(globalJson);
 			}
@@ -44,6 +46,7 @@ public class StaticRenderer {
 	private Map<String,Object> model;
 	//private String templateRoot = null;
 	private String templateRoot = INPUT_DIR + "tpl";
+	private int pageCount = 0;
 
 	private StaticRenderer(File inputDir, File outputDir, Map<String,Object> model) {
 		this.inputDir = inputDir;
@@ -53,6 +56,7 @@ public class StaticRenderer {
 
 	private void run() {
 		processDirectory(inputDir);
+		LOG.info("Procssed "+pageCount+" pages.");
 	}
 
 	private void processDirectory(File inDir) {
@@ -65,7 +69,8 @@ public class StaticRenderer {
 			} else if (!inFile.getName().endsWith(".html")) {
 				continue;
 			} else {
-				System.out.println("Processing file: " + inFile.getPath());
+				LOG.info("Processing file: " + inFile.getPath());
+				pageCount++;
 				long fStart = System.nanoTime();
 				TemplateRenderer renderer = new TemplateRenderer(inFile);
 				renderer.setTemplateRoot(templateRoot);
@@ -79,15 +84,15 @@ public class StaticRenderer {
 					renderer.render(fw);
 					fw.flush();
 				} catch (IOException ex) {
-					System.out.println("Failed to render template file " + outFile.getPath() + ": " + ex.getMessage());
+					LOG.error("Failed to render template file " + outFile.getPath() + ": " + ex.getMessage());
 					ex.printStackTrace();
 				}
 				long fEnd = System.nanoTime();
-				System.out.printf("%s completed in %d ms.\n", inFile.getPath(), (fEnd - fStart) / 1000000);
+				LOG.info(String.format("%s completed in %d ms.", inFile.getPath(), (fEnd - fStart) / 1000000));
 			}
 		}
 
 		long dEnd = System.nanoTime();
-		System.out.printf("%s completed in %d ms.\n", inDir.getPath(), (dEnd - dStart) / 1000000);
+		LOG.info(String.format("%s completed in %d ms.", inDir.getPath(), (dEnd - dStart) / 1000000));
 	}
 }
