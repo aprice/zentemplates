@@ -26,8 +26,8 @@ public class BlogServlet extends HttpServlet {
 	protected void processRequest(HttpServletRequest request, HttpServletResponse response)
 			throws ServletException, IOException {
 		String mode = request.getPathInfo();
-		mode = (mode == null) ? "home" : mode;
-		String page = "home";
+		mode = (mode == null || mode.isEmpty()) ? "home" : mode.split("/")[0];
+		String page = mode;
 		Map<String,Object> model = new HashMap<String,Object>();
 
 		if (mode.equals("list")) {

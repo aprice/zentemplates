@@ -221,10 +221,8 @@ public class TemplateRenderer {
 				String firstClass;
 				if (e.className().isEmpty()) {
 					firstClass = null;
-				} else if (e.className().contains(" ")) {
-					firstClass = e.className().substring(e.className().indexOf(" "));
 				} else {
-					firstClass = e.className();
+					firstClass = e.className().split(" ", 2)[0];
 				}
 
 				if (!e.id().isEmpty() && propLookup.hasProperty(e.id())) {
@@ -244,10 +242,17 @@ public class TemplateRenderer {
 		if (property instanceof Map) property = ((Map)property).values();
 		LOG.trace(key+" is "+(property == null ? "null" : "a "+property.getClass()));
 
-		// Non-map collections and primitive wrappers can be injected directly
 		if (property == null) {
+			LOG.trace("Property is null for key "+key);
 			element.html("");
+		} else if (property instanceof Map) {
+			LOG.trace("Injecting map");
+			propLookup.pushScope(key);
+			handleInjection(element);
+			handleSubstitution(element);
+			propLookup.popScope(key);
 		} else if (property instanceof Collection) {
+			LOG.trace("Injecting collection");
 			Element lastElement = element;
 			List list = new ArrayList((Collection)property);
 			for (int i = 0; i < list.size(); i++) {
@@ -268,8 +273,10 @@ public class TemplateRenderer {
 			}
 			element.remove();
 		} else if (isBasicType(property)) {
+			LOG.trace("Injecting primitive");
 			element.html(cleanAndParagraph(property.toString()));
 		} else {
+			LOG.trace("Injecting object");
 			propLookup.pushScope(key);
 			handleInjection(element);
 			handleSubstitution(element);
@@ -284,6 +291,17 @@ public class TemplateRenderer {
 				|| o instanceof Float || o instanceof Double
 				|| o instanceof Boolean || o instanceof Character
 				|| o instanceof BigInteger || o instanceof BigDecimal;
+	}
+
+	private void processElement(String[] scope, Element element) {
+		for (String scopePart : scope) {
+			propLookup.pushScope(scopePart);
+		}
+		handleInjection(element);
+		handleSubstitution(element);
+		for (String scopePart : scope) {
+			propLookup.popScope(scopePart);
+		}
 	}
 
 	private void handleSubstitution() {

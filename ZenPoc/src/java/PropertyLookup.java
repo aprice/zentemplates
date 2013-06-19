@@ -197,7 +197,7 @@ public class PropertyLookup extends StrLookup<String> {
 				} catch (NumberFormatException numberFormatException) {
 				}
 
-				if (index == null || index < 0 || index > targetList.size() - 1) {
+				if (index == null || index < 0 || index >= targetList.size()) {
 					exists = false;
 					break;
 				} else {
@@ -224,7 +224,7 @@ public class PropertyLookup extends StrLookup<String> {
 			// Ignore
 		}
 
-		return (f == null);
+		return (f != null);
 	}
 
 	private Object getFieldValue(Object obj, String name) {
