@@ -247,10 +247,7 @@ public class TemplateRenderer {
 			element.html("");
 		} else if (property instanceof Map) {
 			LOG.trace("Injecting map");
-			propLookup.pushScope(key);
-			handleInjection(element);
-			handleSubstitution(element);
-			propLookup.popScope(key);
+			processElement(key, element);
 		} else if (property instanceof Collection) {
 			LOG.trace("Injecting collection");
 			Element lastElement = element;
@@ -263,12 +260,7 @@ public class TemplateRenderer {
 				if (isBasicType(item)) {
 					newElement.html(cleanAndParagraph(item.toString()));
 				} else {
-					propLookup.pushScope(key);
-					propLookup.pushScope(String.valueOf(i));
-					handleInjection(newElement);
-					handleSubstitution(newElement);
-					propLookup.popScope();
-					propLookup.popScope(key);
+					processElement(new String[] {key, String.valueOf(i)}, newElement);
 				}
 			}
 			element.remove();
@@ -277,10 +269,7 @@ public class TemplateRenderer {
 			element.html(cleanAndParagraph(property.toString()));
 		} else {
 			LOG.trace("Injecting object");
-			propLookup.pushScope(key);
-			handleInjection(element);
-			handleSubstitution(element);
-			propLookup.popScope(key);
+			processElement(key, element);
 		}
 	}
 
@@ -291,6 +280,10 @@ public class TemplateRenderer {
 				|| o instanceof Float || o instanceof Double
 				|| o instanceof Boolean || o instanceof Character
 				|| o instanceof BigInteger || o instanceof BigDecimal;
+	}
+
+	private void processElement(String scope, Element element) {
+		processElement(new String[] {scope}, element);
 	}
 
 	private void processElement(String[] scope, Element element) {
