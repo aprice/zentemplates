@@ -21,7 +21,7 @@ import org.jboss.logging.MDC;
 public class PropertyLookup extends StrLookup<String> {
 	private static final Logger LOG = Logger.getLogger(PropertyLookup.class);
 
-	private final Map<String, Object> model = new HashMap<String,Object>();
+	/**private/**/public/**/ final Map<String, Object> model = new HashMap<String,Object>();
 	boolean clean = false, paragraph = false;
 	Deque<String> scopeStack = new LinkedList<String>();
 	Object scopeRoot = null;

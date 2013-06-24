@@ -160,13 +160,8 @@ public class TemplateRenderer {
 	}
 
 	private void handleInjection() {
-		handleInjection(outDoc);
-	}
-
-	private void handleInjection(Element rootElement) {
-		LOG.info("Handling injection for "+rootElement.tagName());
-
-		for (Element e : rootElement.getElementsByAttribute("data-z-snippet")) {
+		LOG.trace("Handling snippets");
+		for (Element e : outDoc.getElementsByAttribute("data-z-snippet")) {
 			String snippetName = e.dataset().get("z-snippet");
 			String[] snippetParts = snippetName.split("#",2);
 			File snippetFile = findTemplateFile(snippetParts[0]);
@@ -196,58 +191,84 @@ public class TemplateRenderer {
 			}
 		}
 
-		Elements dummies = rootElement.getElementsByClass("z-lorem");
+		LOG.trace("Handling lorems");
+		Elements dummies = outDoc.getElementsByClass("z-lorem");
 		for (Element e: dummies) {
 			e.remove();
 		}
 
-		for (Element e : rootElement.getElementsByAttribute("data-z-if")) {
+		LOG.trace("Handling conditionals");
+		for (Element e : outDoc.getElementsByAttribute("data-z-if")) {
 			String expression = e.dataset().get("z-if").trim();
 			if (!propLookup.lookupBoolean(expression)) {
 				e.remove();
 			}
 		}
 
-		Elements candInject = rootElement.getElementsByAttribute("class");
-		candInject.addAll(rootElement.getElementsByAttribute("id"));
-		candInject.removeAll(rootElement.getElementsByAttribute("data-z-no-inject"));
-		candInject.addAll(rootElement.getElementsByAttribute("data-z-inject"));
-		candInject.remove(rootElement);
-		LOG.trace("Injection candidates: "+candInject.size());
-		for (Element e: candInject) {
-			if (e.hasAttr("data-z-inject")) {
-				inject(e, e.dataset().get("z-inject"));
-			} else {
-				String firstClass;
-				if (e.className().isEmpty()) {
-					firstClass = null;
-				} else {
-					firstClass = e.className().split(" ", 2)[0];
-				}
+		LOG.trace("Handling injection");
 
-				if (!e.id().isEmpty() && propLookup.hasProperty(e.id())) {
-					inject(e, e.id());
-					break;
-				} else if (firstClass != null && propLookup.hasProperty(firstClass)) {
-					inject(e, firstClass);
-					break;
-				}
+		DocumentContext docCtx = new DocumentContext(outDoc, new ModelContext(propLookup.model));
+		processElement(docCtx);
+	}
+
+	private void processChildren(DocumentContext context) {
+		if (!context.currentNode.children().isEmpty()) {
+			Element curElem = context.currentNode.child(0);
+			do {
+				processElement(new DocumentContext(context, curElem, context.modelContext));
+				curElem = curElem.nextElementSibling();
+			} while (curElem != null);
+		}
+		handleSubstitution(context);
+	}
+
+	private void processElement(DocumentContext context) {
+		LOG.debug("Processing element "+getElementPath(context.currentNode)+" in scope "+context.modelContext.modelPath);
+		Element element = context.currentNode;
+		ModelContext model = context.modelContext;
+		String injectKey = null;
+
+		if (element.hasAttr("data-z-no-inject")) {
+
+		} else if (element.hasAttr("data-z-inject")) {
+			injectKey = element.attr("data-z-inject");
+		} else if (!element.id().isEmpty() && model.hasProperty(element.id())) {
+			injectKey = element.id();
+		} else if (element.hasAttr("class")) {
+			String firstClass;
+			if (element.className().isEmpty()) {
+				firstClass = null;
+			} else {
+				firstClass = element.className().split(" ", 2)[0];
 			}
+
+			if (firstClass != null) LOG.trace("Model "+model.modelPath+" has property "+firstClass+"? "+(model.hasProperty(firstClass)?"yes":"no"));
+
+			if (firstClass != null && model.hasProperty(firstClass)) {
+				injectKey = firstClass;
+			}
+		}
+
+		if (injectKey != null) {
+			inject(context, injectKey);
+		} else {
+			processChildren(context);
 		}
 	}
 
-	private void inject(Element element, String key) {
+	private void inject(DocumentContext context, String key) {
 		LOG.debug("Injecting key: "+key);
-		Object property = propLookup.lookupProperty(key);
-		if (property instanceof Map) property = ((Map)property).values();
+		Object property = context.modelContext.getProperty(key);
 		LOG.trace(key+" is "+(property == null ? "null" : "a "+property.getClass()));
 
+		Element element = context.currentNode;
 		if (property == null) {
 			LOG.trace("Property is null for key "+key);
 			element.html("");
 		} else if (property instanceof Map) {
 			LOG.trace("Injecting map");
-			processElement(key, element);
+			context.modelContext = new ModelContext(context.modelContext, key);
+			processChildren(context);
 		} else if (property instanceof Collection) {
 			LOG.trace("Injecting collection");
 			Element lastElement = element;
@@ -260,7 +281,8 @@ public class TemplateRenderer {
 				if (isBasicType(item)) {
 					newElement.html(cleanAndParagraph(item.toString()));
 				} else {
-					processElement(new String[] {key, String.valueOf(i)}, newElement);
+					DocumentContext itemCtx = new DocumentContext(context, newElement, new ModelContext(context.modelContext, key + "." + String.valueOf(i)));
+					processChildren(itemCtx);
 				}
 			}
 			element.remove();
@@ -269,31 +291,32 @@ public class TemplateRenderer {
 			element.html(cleanAndParagraph(property.toString()));
 		} else {
 			LOG.trace("Injecting object");
-			processElement(key, element);
+			context.modelContext = new ModelContext(context.modelContext, key);
+			processChildren(context);
 		}
 	}
 
-	private boolean isBasicType(Object o) {
-		return o instanceof String
-				|| o instanceof Byte || o instanceof Short
-				|| o instanceof Integer || o instanceof Long
-				|| o instanceof Float || o instanceof Double
-				|| o instanceof Boolean || o instanceof Character
-				|| o instanceof BigInteger || o instanceof BigDecimal;
-	}
-
-	private void processElement(String scope, Element element) {
-		processElement(new String[] {scope}, element);
-	}
-
-	private void processElement(String[] scope, Element element) {
-		for (String scopePart : scope) {
-			propLookup.pushScope(scopePart);
+	private void handleSubstitution(DocumentContext context) {
+		LOG.info("Handling element-level substitution");
+		Element rootElement = context.currentNode;
+		if (rootElement.tagName().equals("html") || rootElement.tagName().equals("head")
+				|| rootElement.parent() == null || rootElement.parents().contains(rootElement.ownerDocument().head())) {
+			LOG.trace("Skipped substitution for node "+getElementPath(rootElement));
+			return;
 		}
-		handleInjection(element);
-		handleSubstitution(element);
-		for (String scopePart : scope) {
-			propLookup.popScope(scopePart);
+		propLookup.setScope(context.modelContext.modelPath);
+		StrSubstitutor ss = new StrSubstitutor(propLookup);
+		//LOG.trace("Element: " + getElementPath(rootElement));
+		//LOG.trace("OuterHTML: " + rootElement.outerHtml());
+		String text = ss.replace(rootElement.outerHtml());
+		//LOG.trace("Substituted: " + text);
+		Document fragment = Jsoup.parseBodyFragment(text);
+		//LOG.trace("Parsed: "+fragment.body().html());
+		Element processed = fragment.body().child(0);
+		//LOG.trace("Replaced "+rootElement.html()+" with "+processed.html());
+		rootElement.html(processed.html());
+		for (Attribute attr: processed.attributes()) {
+			rootElement.attr(attr.getKey(), attr.getValue());
 		}
 	}
 
@@ -302,18 +325,6 @@ public class TemplateRenderer {
 		StrSubstitutor ss = new StrSubstitutor(propLookup);
 		String text = ss.replace(outDoc.html());
 		outDoc = Jsoup.parse(text);
-	}
-
-	private void handleSubstitution(Element rootElement) {
-		LOG.info("Handling element-level substitution");
-		StrSubstitutor ss = new StrSubstitutor(propLookup);
-		String text = ss.replace(rootElement.outerHtml());
-		Document fragment = Jsoup.parseBodyFragment(text);
-		Element processed = fragment.body().child(0);
-		rootElement.html(processed.html());
-		for (Attribute attr: processed.attributes()) {
-			rootElement.attr(attr.getKey(), attr.getValue());
-		}
 	}
 
 	private void writeOut(HttpServletResponse response) throws IOException {
@@ -329,6 +340,33 @@ public class TemplateRenderer {
 		outDoc.outputSettings().indentAmount(4);
 		result = outDoc.ownerDocument().html();
 		out.write(result);
+	}
+
+	private boolean isBasicType(Object o) {
+		return o instanceof String
+				|| o instanceof Byte || o instanceof Short
+				|| o instanceof Integer || o instanceof Long
+				|| o instanceof Float || o instanceof Double
+				|| o instanceof Boolean || o instanceof Character
+				|| o instanceof BigInteger || o instanceof BigDecimal
+				|| o instanceof java.util.Date || o instanceof java.sql.Date;
+	}
+
+	private String getElementPath(Element element) {
+		List<String> levels = new ArrayList<String>();
+		do {
+			levels.add(element.tagName() + '(' + element.elementSiblingIndex() + ')');
+		} while ((element = element.parent()) != null);
+
+		StringBuilder b = new StringBuilder();
+		for (int i = levels.size() - 1; i >= 0; i--) {
+			b.append(levels.get(i));
+			if (i > 0) {
+				b.append('/');
+			}
+		}
+
+		return b.toString();
 	}
 
 	private File findTemplateFile(String name) {
