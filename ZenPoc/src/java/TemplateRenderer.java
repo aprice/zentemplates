@@ -297,7 +297,7 @@ public class TemplateRenderer {
 	}
 
 	private void handleSubstitution(DocumentContext context) {
-		LOG.info("Handling element-level substitution");
+		LOG.debug("Handling element-level substitution");
 		Element rootElement = context.currentNode;
 		if (rootElement.tagName().equals("html") || rootElement.tagName().equals("head")
 				|| rootElement.parent() == null || rootElement.parents().contains(rootElement.ownerDocument().head())) {
@@ -306,17 +306,10 @@ public class TemplateRenderer {
 		}
 		propLookup.setScope(context.modelContext.modelPath);
 		StrSubstitutor ss = new StrSubstitutor(propLookup);
-		//LOG.trace("Element: " + getElementPath(rootElement));
-		//LOG.trace("OuterHTML: " + rootElement.outerHtml());
-		String text = ss.replace(rootElement.outerHtml());
-		//LOG.trace("Substituted: " + text);
-		Document fragment = Jsoup.parseBodyFragment(text);
-		//LOG.trace("Parsed: "+fragment.body().html());
-		Element processed = fragment.body().child(0);
-		//LOG.trace("Replaced "+rootElement.html()+" with "+processed.html());
-		rootElement.html(processed.html());
-		for (Attribute attr: processed.attributes()) {
-			rootElement.attr(attr.getKey(), attr.getValue());
+
+		rootElement.html(ss.replace(rootElement.html()));
+		for (Attribute a : rootElement.attributes()) {
+			a.setValue(ss.replace(a.getValue()));
 		}
 	}
 
