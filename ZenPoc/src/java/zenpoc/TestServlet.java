@@ -1,7 +1,9 @@
+package zenpoc;
+
 
 import java.io.IOException;
-import java.util.HashMap;
-import java.util.Map;
+import java.util.ArrayList;
+import java.util.List;
 import javax.servlet.ServletException;
 import javax.servlet.http.HttpServlet;
 import javax.servlet.http.HttpServletRequest;
@@ -11,7 +13,7 @@ import javax.servlet.http.HttpServletResponse;
  *
  * @author Adrian
  */
-public class BlogServlet extends HttpServlet {
+public class TestServlet extends HttpServlet {
 
 	/**
 	 * Processes requests for both HTTP
@@ -25,37 +27,15 @@ public class BlogServlet extends HttpServlet {
 	 */
 	protected void processRequest(HttpServletRequest request, HttpServletResponse response)
 			throws ServletException, IOException {
-		String mode = request.getPathInfo();
-		mode = (mode == null || mode.isEmpty()) ? "home" : mode.split("/")[0];
-		String page = mode;
-		Map<String,Object> model = new HashMap<String,Object>();
-
-		if (mode.equals("list")) {
-			// Post listing
-
-		} else if (mode.equals("view")) {
-			// Full post view
-
-		} else if (mode.equals("edit")) {
-			// Create/edit post
-
-		} else if (mode.equals("comment")) {
-			// Add comment
-
-		} else if (mode.equals("login")) {
-			// Admin authentication
-
-		} else {
-			// Homepage
-			page = "home";
-
-			// Get list of homepage articles
-			BlogModel blogMo = BlogModel.getModel();
-			model.put("posts", blogMo.getRecentPosts(5));
-		}
-
-		TemplateRenderer r = new TemplateRenderer("WEB-INF/blog/"+page+".html", getServletContext());
-		r.addProperties(model);
+		TemplateRenderer r = new TemplateRenderer("WEB-INF/sample.html", getServletContext());
+		String name = request.getParameter("name");
+		name = (name == null) ? "world" : name;
+		r.addProperty("name", name);
+		List<String> injList = new ArrayList<String>(3);
+		injList.add("Testing 1");
+		injList.add("Testing 2");
+		injList.add("Testing 3");
+		r.addProperty("injectionTest", injList);
 		r.render(response);
 	}
 

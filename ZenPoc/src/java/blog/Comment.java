@@ -1,3 +1,5 @@
+package blog;
+
 
 import java.util.Date;
 
@@ -6,12 +8,11 @@ import java.util.Date;
  *
  * @author Adrian
  */
-public class Post {
+public class Comment {
 	public Integer id;
-	public Integer author;
-	public Date postedDate;
-	public String shortName;
 	public String title;
-	public String intro;
 	public String body;
+	public String author;
+	public Integer post;
+	public Date postedDate;
 }

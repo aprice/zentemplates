@@ -2,11 +2,11 @@
 <web-app version="3.0" xmlns="http://java.sun.com/xml/ns/javaee" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://java.sun.com/xml/ns/javaee http://java.sun.com/xml/ns/javaee/web-app_3_0.xsd">
     <servlet>
         <servlet-name>TestServlet</servlet-name>
-        <servlet-class>TestServlet</servlet-class>
+        <servlet-class>zenpoc.TestServlet</servlet-class>
     </servlet>
     <servlet>
         <servlet-name>BlogServlet</servlet-name>
-        <servlet-class>BlogServlet</servlet-class>
+        <servlet-class>blog.BlogServlet</servlet-class>
     </servlet>
     <servlet-mapping>
         <servlet-name>TestServlet</servlet-name>

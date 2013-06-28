@@ -1,3 +1,5 @@
+package zenpoc;
+
 
 import java.io.File;
 import java.io.FileReader;
@@ -7,6 +9,7 @@ import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import javax.servlet.ServletContext;
@@ -31,7 +34,9 @@ public class TemplateRenderer {
 	File templateFile;
 	Document inDoc, outDoc;
 	String result, templateRoot = null, siteRoot = null;
-	PropertyLookup propLookup;
+	ContextualLookup propLookup;
+	DocumentContext rootContext;
+	final Map<String, Object> model = new HashMap<String, Object>();
 
 	public TemplateRenderer(String templatePath, ServletContext servletContext) {
 		this(servletContext.getRealPath(templatePath));
@@ -44,23 +49,22 @@ public class TemplateRenderer {
 	public TemplateRenderer(File templateFile) {
 		this.templateFile = templateFile;
 		result = "";
-		propLookup = new PropertyLookup();
 	}
 
-	void addProperty(String name, Object value) {
-		propLookup.addProperty(name, value);
+	public void addProperty(String key, Object value) {
+		model.put(key, value);
 	}
 
-	void addProperties(Map<String,Object> properties) {
-		propLookup.addProperties(properties);
+	public void addProperties(Map model) {
+		this.model.putAll(model);
 	}
 
-	void render(HttpServletResponse response) throws IOException {
+	public void render(HttpServletResponse response) throws IOException {
 		handleRendering();
 		writeOut(response);
 	}
 
-	void render(Writer out) throws IOException {
+	public void render(Writer out) throws IOException {
 		handleRendering();
 		writeOut(out);
 	}
@@ -160,6 +164,9 @@ public class TemplateRenderer {
 	}
 
 	private void handleInjection() {
+		rootContext = new DocumentContext(outDoc, new ModelContext(model));
+		propLookup = new ContextualLookup(rootContext);
+
 		LOG.trace("Handling snippets");
 		for (Element e : outDoc.getElementsByAttribute("data-z-snippet")) {
 			String snippetName = e.dataset().get("z-snippet");
@@ -198,17 +205,16 @@ public class TemplateRenderer {
 		}
 
 		LOG.trace("Handling conditionals");
+		// TODO: Move to element-level handling as this doesn't support nested contexts
 		for (Element e : outDoc.getElementsByAttribute("data-z-if")) {
 			String expression = e.dataset().get("z-if").trim();
-			if (!propLookup.lookupBoolean(expression)) {
+			if (!rootContext.lookupBoolean(expression)) {
 				e.remove();
 			}
 		}
 
 		LOG.trace("Handling injection");
-
-		DocumentContext docCtx = new DocumentContext(outDoc, new ModelContext(propLookup.model));
-		processElement(docCtx);
+		processElement(rootContext);
 	}
 
 	private void processChildren(DocumentContext context) {
@@ -223,16 +229,16 @@ public class TemplateRenderer {
 	}
 
 	private void processElement(DocumentContext context) {
-		LOG.debug("Processing element "+getElementPath(context.currentNode)+" in scope "+context.modelContext.modelPath);
+		LOG.trace("Processing element "+getElementPath(context.currentNode)+" in scope "+context.modelContext.modelPath);
 		Element element = context.currentNode;
 		ModelContext model = context.modelContext;
 		String injectKey = null;
 
 		if (element.hasAttr("data-z-no-inject")) {
-
+			injectKey = null;
 		} else if (element.hasAttr("data-z-inject")) {
 			injectKey = element.attr("data-z-inject");
-		} else if (!element.id().isEmpty() && model.hasProperty(element.id())) {
+		} else if (!element.id().isEmpty() && context.hasProperty(element.id())) {
 			injectKey = element.id();
 		} else if (element.hasAttr("class")) {
 			String firstClass;
@@ -242,9 +248,9 @@ public class TemplateRenderer {
 				firstClass = element.className().split(" ", 2)[0];
 			}
 
-			if (firstClass != null) LOG.trace("Model "+model.modelPath+" has property "+firstClass+"? "+(model.hasProperty(firstClass)?"yes":"no"));
+			if (firstClass != null) LOG.trace("Model "+model.modelPath+" has property "+firstClass+"? "+(context.hasProperty(firstClass)?"yes":"no"));
 
-			if (firstClass != null && model.hasProperty(firstClass)) {
+			if (firstClass != null && context.hasProperty(firstClass)) {
 				injectKey = firstClass;
 			}
 		}
@@ -258,7 +264,7 @@ public class TemplateRenderer {
 
 	private void inject(DocumentContext context, String key) {
 		LOG.debug("Injecting key: "+key);
-		Object property = context.modelContext.getProperty(key);
+		Object property = context.getProperty(key);
 		LOG.trace(key+" is "+(property == null ? "null" : "a "+property.getClass()));
 
 		Element element = context.currentNode;
@@ -291,20 +297,21 @@ public class TemplateRenderer {
 			element.html(cleanAndParagraph(property.toString()));
 		} else {
 			LOG.trace("Injecting object");
-			context.modelContext = new ModelContext(context.modelContext, key);
-			processChildren(context);
+			if (element.children().isEmpty()) {
+				LOG.trace("Element has no children, injecting raw");
+				element.html(cleanAndParagraph(property.toString()));
+			} else {
+				LOG.trace("Element has children, injecting & reprocessing");
+				context.modelContext = new ModelContext(context.modelContext, key);
+				processChildren(context);
+			}
 		}
 	}
 
 	private void handleSubstitution(DocumentContext context) {
-		LOG.debug("Handling element-level substitution");
+		LOG.trace("Handling element-level substitution");
 		Element rootElement = context.currentNode;
-		if (rootElement.tagName().equals("html") || rootElement.tagName().equals("head")
-				|| rootElement.parent() == null || rootElement.parents().contains(rootElement.ownerDocument().head())) {
-			LOG.trace("Skipped substitution for node "+getElementPath(rootElement));
-			return;
-		}
-		propLookup.setScope(context.modelContext.modelPath);
+		propLookup.setContext(context);
 		StrSubstitutor ss = new StrSubstitutor(propLookup);
 
 		rootElement.html(ss.replace(rootElement.html()));
@@ -315,6 +322,7 @@ public class TemplateRenderer {
 
 	private void handleSubstitution() {
 		LOG.info("Handling substitution");
+		propLookup.setContext(rootContext);
 		StrSubstitutor ss = new StrSubstitutor(propLookup);
 		String text = ss.replace(outDoc.html());
 		outDoc = Jsoup.parse(text);

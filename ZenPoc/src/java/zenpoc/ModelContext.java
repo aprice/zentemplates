@@ -1,5 +1,7 @@
+package zenpoc;
 
-import java.lang.reflect.Field;
+
+import java.lang.reflect.InvocationTargetException;
 import java.util.List;
 import java.util.Map;
 import org.apache.log4j.Logger;
@@ -9,7 +11,7 @@ import org.apache.log4j.Logger;
  *
  * @author Adrian
  */
-public class ModelContext {
+public class ModelContext implements LookupContext {
 	private static final Logger LOG = Logger.getLogger(ModelContext.class);
 	ModelContext parentContext = null;
 	String modelPath = "";
@@ -25,11 +27,16 @@ public class ModelContext {
 		currentNode = rootNode;
 	}
 
-	Object getProperty(String key) {
+	@Override
+	public Object getProperty(String key) {
 		String[] parts = key.split("\\.");
+		LOG.trace(key + " has " + parts.length + " parts");
 		Object target = currentNode;
 		boolean firstPart = true;
 		for (String part : parts) {
+			if (firstPart) {
+				firstPart = false;
+			}
 			if (firstPart) {
 				firstPart = false;
 				if (currentNode != null && hasField(currentNode, part)) {
@@ -37,13 +44,15 @@ public class ModelContext {
 				} else if (parentContext != null && parentContext.hasProperty(key)) {
 					target = parentContext.getProperty(part);
 				} else {
+					LOG.info("Could not locate "+part);
 					target = null;
 				}
 			} else if (target == null) {
+				LOG.info("Could not locate "+part);
 				break;
 			} else if (target instanceof Map) {
 				if (!((Map)target).containsKey(part)) {
-					LOG.debug("target does not have element "+part);
+					LOG.info("target does not have element "+part);
 				}
 				target = ((Map)target).get(part);
 			} else if (target instanceof List) {
@@ -55,7 +64,7 @@ public class ModelContext {
 				}
 
 				if (index == null || index < 0 || index > targetList.size() - 1) {
-					LOG.debug("Invalid list index: "+index);
+					LOG.info("Invalid list index: "+index);
 					target = null;
 					break;
 				} else {
@@ -64,17 +73,19 @@ public class ModelContext {
 			} else if (hasField(target, part)) {
 				target = getFieldValue(target, part);
 			} else {
-				LOG.warn(target.getClass()+" does not have property "+part);
+				LOG.info(target.getClass()+" does not have property "+part);
 			}
 		}
 
 		return target;
 	}
 
+	@Override
 	public boolean hasProperty(String key) {
 		return hasProperty(key, true);
 	}
 
+	@Override
 	public boolean hasProperty(String key, boolean checkRoot) {
 		String[] parts = key.split("\\.");
 		Object target = null;
@@ -128,19 +139,53 @@ public class ModelContext {
 		return exists;
 	}
 
+	@Override
+	public boolean lookupBoolean(String key) {
+		// TODO: Inversion
+		// TODO: Comparison operators
+		boolean invert = key.charAt(0) == '!';
+		boolean ret;
+
+		Object target = getProperty(key);
+		if (target == null) {
+			ret = false;
+		} else if (target instanceof String) {
+			ret = ((String)target).isEmpty() || target.equals("false");
+		} else if (target instanceof Number) {
+			ret = target.equals(0);
+		} else if (target instanceof Boolean) {
+			ret = (Boolean)target;
+		} else {
+			ret = true;
+		}
+
+		return ret ^ invert;
+	}
+
 	private boolean hasField(Object obj, String name) {
 		if (obj instanceof Map) {
 			if (((Map) obj).containsKey(name)) return true;
 		}
 
-		Field f = null;
+		boolean hasField = false;
 		try {
-			f = obj.getClass().getDeclaredField(name);
+			obj.getClass().getDeclaredField(name);
+			hasField = true;
 		} catch (Exception e) {
 			// Ignore
 		}
 
-		return (f != null);
+		if (!hasField) {
+			String getName = "get" + name.substring(0, 1).toUpperCase() + name.substring(1);
+			try {
+				obj.getClass().getDeclaredMethod(getName).invoke(obj);
+				hasField = true;
+			} catch (Exception e) {
+				// Ignore
+			}
+		}
+
+		return hasField;
 	}
 
 	private Object getFieldValue(Object obj, String name) {
@@ -149,10 +194,22 @@ public class ModelContext {
 		}
 
 		Object ret = null;
+		String getName = "get" + name.substring(0, 1).toUpperCase() + name.substring(1);
 		try {
-			ret = obj.getClass().getDeclaredField(name).get(obj);
-		} catch (Exception e) {
-			// Ignore
+			ret = obj.getClass().getDeclaredMethod(getName).invoke(obj);
+		} catch (IllegalAccessException ex) {
+		} catch (IllegalArgumentException ex) {
+		} catch (InvocationTargetException ex) {
+		} catch (NoSuchMethodException ex) {
+		} catch (SecurityException ex) {
+		}
+
+		if (ret == null) {
+			try {
+				ret = obj.getClass().getDeclaredField(name).get(obj);
+			} catch (Exception e) {
+				// Ignore
+			}
 		}
 
 		return ret;
