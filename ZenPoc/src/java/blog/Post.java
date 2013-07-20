@@ -1,7 +1,9 @@
 package blog;
 
 
+import java.util.ArrayList;
 import java.util.Date;
+import java.util.List;
 import org.jboss.logging.Logger;
 
 
@@ -19,6 +21,7 @@ public class Post {
 	public String body;
 
 	private User author;
+	private List<Comment> comments;
 
 	public User getAuthor() {
 		if (author == null && authorId != null) {
@@ -28,5 +31,11 @@ public class Post {
 		}
 
 		return author;
+	}
+
+	public List<Comment> getComments() {
+		List<Comment> ret = new ArrayList<Comment>();
+
+		return ret;
 	}
 }

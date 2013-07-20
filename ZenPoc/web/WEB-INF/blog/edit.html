@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html class="page">
+	<head>
+		<title id="DocTitle">Create/Edit Post</title>
+		<meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+	</head>
+	<body>
+		<section id="MainContent">
+			<form action="edit" method="POST">
+				<fieldset style="display:none;" data-z-if="post">
+					<input type="hidden" name="id" value="${post.id}" />
+				</fieldset>
+
+				<fieldset class="post">
+					<p><label>Title</label></p>
+					<p><input name="title" value="${title}" /></p>
+
+					<p><label>Intro Text</label></p>
+					<textarea name="introText" data-z-inject="introText" rows="8" cols="80"></textarea>
+
+					<p><label>Main Body</label></p>
+					<textarea name="body" data-z-inject="body" rows="20" cols="80"></textarea>
+
+					<p><input type="submit" name="save" value="Save" /></p>
+				</fieldset>
+			</form>
+		</section>
+	</body>
+</html>

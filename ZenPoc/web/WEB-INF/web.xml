@@ -16,6 +16,10 @@
         <servlet-name>BlogServlet</servlet-name>
         <url-pattern>/Blog</url-pattern>
     </servlet-mapping>
+    <servlet-mapping>
+        <servlet-name>BlogServlet</servlet-name>
+        <url-pattern>/Blog/*</url-pattern>
+    </servlet-mapping>
     <session-config>
         <session-timeout>
             30

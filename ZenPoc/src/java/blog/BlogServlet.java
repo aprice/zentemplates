@@ -8,6 +8,7 @@ import javax.servlet.ServletException;
 import javax.servlet.http.HttpServlet;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
+import org.apache.log4j.Logger;
 import zenpoc.TemplateRenderer;
 
 /**
@@ -15,7 +16,7 @@ import zenpoc.TemplateRenderer;
  * @author Adrian
  */
 public class BlogServlet extends HttpServlet {
-
+	private static final Logger LOG = Logger.getLogger(BlogServlet.class);
 	/**
 	 * Processes requests for both HTTP
 	 * <code>GET</code> and
@@ -28,9 +29,13 @@ public class BlogServlet extends HttpServlet {
 	 */
 	protected void processRequest(HttpServletRequest request, HttpServletResponse response)
 			throws ServletException, IOException {
-		String mode = request.getPathInfo();
-		mode = (mode == null || mode.isEmpty()) ? "home" : mode.split("/")[0];
-		String page = mode;
+		String pathInfo = request.getPathInfo();
+		LOG.debug("Path info: "+pathInfo);
+		String[] pathParts = (pathInfo == null || pathInfo.isEmpty())
+				? new String[]{"home"}
+				: pathInfo.substring(1).split("/");
+		String mode = pathParts[0];
+		String page = null;
 		Map<String,Object> model = new HashMap<String,Object>();
 
 		if (mode.equals("list")) {
@@ -38,10 +43,32 @@ public class BlogServlet extends HttpServlet {
 
 		} else if (mode.equals("view")) {
 			// Full post view
-
+			page = "view";
+			Post post = null;
+			if (pathParts.length > 1) {
+				String postName = pathParts[1];
+				post = BlogModel.getModel().getPostForShortName(postName);
+			}
+			if (post != null) {
+				model.put("post", post);
+			} else {
+				response.setStatus(404);
+			}
 		} else if (mode.equals("edit")) {
 			// Create/edit post
-
+			page = "edit";
+			Post post = null;
+			if (pathParts.length > 1) {
+				String postName = pathParts[1];
+				post = BlogModel.getModel().getPostForShortName(postName);
+			} else if (request.getParameter("id") != null) {
+				post = BlogModel.getModel().getPost(Integer.valueOf(request.getParameter("id")));
+			}
+			if (post != null) {
+				model.put("post", post);
+			} else if (pathParts.length > 1 || request.getParameter("id") != null) {
+				response.setStatus(404);
+			}
 		} else if (mode.equals("comment")) {
 			// Add comment
 
@@ -57,6 +84,7 @@ public class BlogServlet extends HttpServlet {
 			model.put("posts", blogMo.getRecentPosts(5));
 		}
 
+		if (response.getStatus() != 200) page = String.valueOf(response.getStatus());
 		TemplateRenderer r = new TemplateRenderer("WEB-INF/blog/"+page+".html", getServletContext());
 		r.addProperties(model);
 		r.render(response);

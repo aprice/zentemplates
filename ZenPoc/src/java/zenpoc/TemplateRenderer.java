@@ -30,6 +30,7 @@ import org.jsoup.select.Elements;
  */
 public class TemplateRenderer {
 	private static final Logger LOG = Logger.getLogger(TemplateRenderer.class);
+	private static final String DOCTYPE_HTML5 = "<!DOCTYPE html>\n";
 
 	File templateFile;
 	Document inDoc, outDoc;
@@ -234,10 +235,10 @@ public class TemplateRenderer {
 		ModelContext model = context.modelContext;
 		String injectKey = null;
 
-		if (element.hasAttr("data-z-no-inject")) {
-			injectKey = null;
-		} else if (element.hasAttr("data-z-inject")) {
+		if (element.hasAttr("data-z-inject")) {
 			injectKey = element.attr("data-z-inject");
+		} else if (element.hasAttr("data-z-no-inject")) {
+			injectKey = null;
 		} else if (!element.id().isEmpty() && context.hasProperty(element.id())) {
 			injectKey = element.id();
 		} else if (element.hasAttr("class")) {
@@ -328,18 +329,21 @@ public class TemplateRenderer {
 		outDoc = Jsoup.parse(text);
 	}
 
+	private String getOutput() {
+		outDoc.outputSettings().indentAmount(4);
+		return DOCTYPE_HTML5 + outDoc.ownerDocument().outerHtml();
+	}
+
 	private void writeOut(HttpServletResponse response) throws IOException {
 		LOG.info("Flushing output");
-		outDoc.outputSettings().indentAmount(4);
-		result = outDoc.ownerDocument().html();
+		result = getOutput();
 		response.setContentType("text/html;charset=utf-8");
 		response.getWriter().write(result);
 	}
 
 	private void writeOut(Writer out) throws IOException {
 		LOG.info("Flushing output");
-		outDoc.outputSettings().indentAmount(4);
-		result = outDoc.ownerDocument().html();
+		result = getOutput();
 		out.write(result);
 	}
 
