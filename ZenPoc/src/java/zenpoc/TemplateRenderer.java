@@ -158,6 +158,8 @@ public class TemplateRenderer {
 				} else if (appendixData[0].equals("after")) {
 					outSibling.after(inAppendix);
 				}
+
+				inAppendix.removeAttr("data-z-append");
 			}
 		} else {
 			outDoc = inDoc.clone();
@@ -170,7 +172,7 @@ public class TemplateRenderer {
 
 		LOG.trace("Handling snippets");
 		for (Element e : outDoc.getElementsByAttribute("data-z-snippet")) {
-			String snippetName = e.dataset().get("z-snippet");
+			String snippetName = e.attr("data-z-snippet");
 			String[] snippetParts = snippetName.split("#",2);
 			File snippetFile = findTemplateFile(snippetParts[0]);
 			if (snippetFile != null) {
@@ -197,6 +199,8 @@ public class TemplateRenderer {
 				LOG.error("Could not locate snippet file: "+snippetName);
 				e.remove();
 			}
+
+			e.removeAttr("data-z-snippet");
 		}
 
 		LOG.trace("Handling lorems");
@@ -211,6 +215,8 @@ public class TemplateRenderer {
 			String expression = e.dataset().get("z-if").trim();
 			if (!rootContext.lookupBoolean(expression)) {
 				e.remove();
+			} else {
+				e.removeAttr("data-z-if");
 			}
 		}
 
@@ -237,8 +243,10 @@ public class TemplateRenderer {
 
 		if (element.hasAttr("data-z-inject")) {
 			injectKey = element.attr("data-z-inject");
+			element.removeAttr("data-z-inject");
 		} else if (element.hasAttr("data-z-no-inject")) {
 			injectKey = null;
+			element.removeAttr("data-z-no-inject");
 		} else if (!element.id().isEmpty() && context.hasProperty(element.id())) {
 			injectKey = element.id();
 		} else if (element.hasAttr("class")) {
