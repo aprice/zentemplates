@@ -38,6 +38,7 @@ public class TemplateRenderer {
 	ContextualLookup propLookup;
 	DocumentContext rootContext;
 	final Map<String, Object> model = new HashMap<String, Object>();
+	boolean prettyPrint = false;
 
 	public TemplateRenderer(String templatePath, ServletContext servletContext) {
 		this(servletContext.getRealPath(templatePath));
@@ -81,7 +82,9 @@ public class TemplateRenderer {
 	private void loadTemplate() throws IOException {
 		LOG.info("Loading template: " + templateFile);
 		inDoc = Jsoup.parse(templateFile, "UTF-8");
+		inDoc.outputSettings().prettyPrint(false);
 		outDoc = new Document(templateFile.getParent());
+		outDoc.outputSettings().prettyPrint(false);
 	}
 
 	private void handleDerivation() throws IOException {
@@ -170,6 +173,30 @@ public class TemplateRenderer {
 		rootContext = new DocumentContext(outDoc, new ModelContext(model));
 		propLookup = new ContextualLookup(rootContext);
 
+		handleSnippets();
+
+		LOG.trace("Handling lorems");
+		Elements dummies = outDoc.getElementsByClass("z-lorem");
+		for (Element e: dummies) {
+			e.remove();
+		}
+
+		LOG.trace("Handling conditionals");
+		// TODO: Move to element-level handling as this doesn't support nested contexts
+		for (Element e : outDoc.getElementsByAttribute("data-z-if")) {
+			String expression = e.dataset().get("z-if").trim();
+			if (!rootContext.lookupBoolean(expression)) {
+				e.remove();
+			} else {
+				e.removeAttr("data-z-if");
+			}
+		}
+
+		LOG.trace("Handling injection");
+		processElement(rootContext);
+	}
+
+	private void handleSnippets() {
 		LOG.trace("Handling snippets");
 		for (Element e : outDoc.getElementsByAttribute("data-z-snippet")) {
 			String snippetName = e.attr("data-z-snippet");
@@ -202,26 +229,6 @@ public class TemplateRenderer {
 
 			e.removeAttr("data-z-snippet");
 		}
-
-		LOG.trace("Handling lorems");
-		Elements dummies = outDoc.getElementsByClass("z-lorem");
-		for (Element e: dummies) {
-			e.remove();
-		}
-
-		LOG.trace("Handling conditionals");
-		// TODO: Move to element-level handling as this doesn't support nested contexts
-		for (Element e : outDoc.getElementsByAttribute("data-z-if")) {
-			String expression = e.dataset().get("z-if").trim();
-			if (!rootContext.lookupBoolean(expression)) {
-				e.remove();
-			} else {
-				e.removeAttr("data-z-if");
-			}
-		}
-
-		LOG.trace("Handling injection");
-		processElement(rootContext);
 	}
 
 	private void processChildren(DocumentContext context) {
@@ -236,9 +243,9 @@ public class TemplateRenderer {
 	}
 
 	private void processElement(DocumentContext context) {
-		LOG.trace("Processing element "+getElementPath(context.currentNode)+" in scope "+context.modelContext.modelPath);
+		LOG.trace("Processing element "+context.getElementPath()+" in scope "+context.modelContext.modelPath);
 		Element element = context.currentNode;
-		ModelContext model = context.modelContext;
+		ModelContext modelCtx = context.modelContext;
 		String injectKey = null;
 
 		if (element.hasAttr("data-z-inject")) {
@@ -257,7 +264,7 @@ public class TemplateRenderer {
 				firstClass = element.className().split(" ", 2)[0];
 			}
 
-			if (firstClass != null) LOG.trace("Model "+model.modelPath+" has property "+firstClass+"? "+(context.hasProperty(firstClass)?"yes":"no"));
+			if (firstClass != null) LOG.trace("Model "+modelCtx.modelPath+" has property "+firstClass+"? "+(context.hasProperty(firstClass)?"yes":"no"));
 
 			if (firstClass != null && context.hasProperty(firstClass)) {
 				injectKey = firstClass;
@@ -338,7 +345,10 @@ public class TemplateRenderer {
 	}
 
 	private String getOutput() {
-		outDoc.outputSettings().indentAmount(4);
+		if (prettyPrint) {
+			outDoc.outputSettings().indentAmount(4);
+		}
+		outDoc.outputSettings().prettyPrint(prettyPrint);
 		return DOCTYPE_HTML5 + outDoc.ownerDocument().outerHtml();
 	}
 
@@ -363,23 +373,6 @@ public class TemplateRenderer {
 				|| o instanceof Boolean || o instanceof Character
 				|| o instanceof BigInteger || o instanceof BigDecimal
 				|| o instanceof java.util.Date || o instanceof java.sql.Date;
-	}
-
-	private String getElementPath(Element element) {
-		List<String> levels = new ArrayList<String>();
-		do {
-			levels.add(element.tagName() + '(' + element.elementSiblingIndex() + ')');
-		} while ((element = element.parent()) != null);
-
-		StringBuilder b = new StringBuilder();
-		for (int i = levels.size() - 1; i >= 0; i--) {
-			b.append(levels.get(i));
-			if (i > 0) {
-				b.append('/');
-			}
-		}
-
-		return b.toString();
 	}
 
 	private File findTemplateFile(String name) {
@@ -439,5 +432,13 @@ public class TemplateRenderer {
 
 	public void setSiteRoot(String siteRoot) {
 		this.siteRoot = siteRoot;
+	}
+
+	public boolean isPrettyPrint() {
+		return prettyPrint;
+	}
+
+	public void setPrettyPrint(boolean prettyPrint) {
+		this.prettyPrint = prettyPrint;
 	}
 }

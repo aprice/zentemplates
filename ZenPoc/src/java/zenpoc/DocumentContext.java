@@ -1,6 +1,8 @@
 package zenpoc;
 
 
+import java.util.ArrayList;
+import java.util.List;
 import org.jsoup.nodes.Element;
 
 
@@ -31,6 +33,24 @@ public class DocumentContext implements LookupContext {
 	@Override
 	public boolean lookupBoolean(String key) {
 		return modelContext.lookupBoolean(key);
+	}
+
+	public String getElementPath() {
+		Element element = currentNode;
+		List<String> levels = new ArrayList<String>();
+		do {
+			levels.add(element.tagName() + '(' + element.elementSiblingIndex() + ')');
+		} while ((element = element.parent()) != null);
+
+		StringBuilder b = new StringBuilder();
+		for (int i = levels.size() - 1; i >= 0; i--) {
+			b.append(levels.get(i));
+			if (i > 0) {
+				b.append('/');
+			}
+		}
+
+		return b.toString();
 	}
 
 	public DocumentContext(Element node, ModelContext model) {
