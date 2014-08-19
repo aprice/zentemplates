@@ -1,7 +1,7 @@
 Zen Templates
 ============
 
-Home page: http://aprice.github.io/zentemplates/
+Home page: http://www.zentemplates.org/
 
 Documentation: https://github.com/aprice/zentemplates/wiki/Writing-Zen-Templates%3A-The-Basics
 
